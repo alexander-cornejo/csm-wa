@@ -1,0 +1,195 @@
+"""Parser for CSM-WA workaround text documents."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass
+class WorkaroundEntry:
+    error: str
+    tuxedo_error: str
+    description: str
+    workaround: str
+    tags: list[str]
+    source_file: str
+    line_number: int
+
+
+ENTRY_SEPARATOR = re.compile(r"^---\s*$", re.MULTILINE)
+
+
+def _strip_comment_lines(text: str) -> str:
+    """Remove leading comment lines so file headers don't block the first entry."""
+    lines = [line for line in text.splitlines() if not line.strip().startswith("#")]
+    return "\n".join(lines).strip()
+
+
+def parse_workaround_file(path: Path) -> list[WorkaroundEntry]:
+    """Parse a single workaround document into structured entries."""
+    text = path.read_text(encoding="utf-8")
+    entries: list[WorkaroundEntry] = []
+
+    blocks = ENTRY_SEPARATOR.split(text)
+    for block in blocks:
+        block = _strip_comment_lines(block.strip())
+        if not block:
+            continue
+
+        entry = _parse_block(block, path.name)
+        if entry:
+            entries.append(entry)
+
+    return entries
+
+
+def _parse_block(block: str, source_file: str) -> WorkaroundEntry | None:
+    error = _extract_section(block, "ERROR")
+    workaround = _extract_section(block, "WORKAROUND")
+
+    if not error or not workaround:
+        return None
+
+    tuxedo_error = _extract_section(block, "TUXEDO_ERROR") or ""
+    description = _extract_section(block, "DESCRIPTION") or ""
+    tags_raw = _extract_section(block, "TAGS") or ""
+    tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+
+    line_number = block[: block.index("[ERROR]")].count("\n") + 1 if "[ERROR]" in block else 1
+
+    return WorkaroundEntry(
+        error=error.strip(),
+        tuxedo_error=tuxedo_error.strip(),
+        description=description.strip(),
+        workaround=workaround.strip(),
+        tags=tags,
+        source_file=source_file,
+        line_number=line_number,
+    )
+
+
+def _extract_section(block: str, section: str) -> str | None:
+    pattern = rf"\[{section}\]\s*\n(.*?)(?=\n\[|\Z)"
+    match = re.search(pattern, block, re.DOTALL | re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def load_all_workarounds(data_dir: Path) -> list[WorkaroundEntry]:
+    """Load every .txt file in the workarounds directory."""
+    entries: list[WorkaroundEntry] = []
+    if not data_dir.exists():
+        return entries
+
+    for path in sorted(data_dir.glob("*.txt")):
+        entries.extend(parse_workaround_file(path))
+
+    return entries
+
+
+SEARCH_SKIP_TERMS = frozenset(
+    {"a", "an", "and", "in", "on", "or", "to", "for", "the", "is", "at", "by", "of", "it"}
+)
+
+
+def _meaningful_terms(query: str) -> list[str]:
+    """Drop very common short words that cause false-positive matches."""
+    terms = query.lower().split()
+    meaningful = [t for t in terms if t not in SEARCH_SKIP_TERMS or len(t) > 2]
+    return meaningful if meaningful else terms
+
+
+def search_workarounds(entries: list[WorkaroundEntry], query: str) -> list[WorkaroundEntry]:
+    """Find entries matching the query (case-insensitive partial match)."""
+    if not query.strip():
+        return []
+
+    query_lower = query.lower().strip()
+    terms = _meaningful_terms(query_lower)
+    results: list[tuple[int, WorkaroundEntry]] = []
+
+    for entry in entries:
+        error_l = entry.error.lower()
+        tags_l = " ".join(entry.tags).lower()
+        tuxedo_l = entry.tuxedo_error.lower()
+        desc_l = entry.description.lower()
+        wa_l = entry.workaround.lower()
+        searchable = " ".join([error_l, tuxedo_l, desc_l, wa_l, tags_l])
+
+        if not all(term in searchable for term in terms):
+            continue
+
+        score = 0
+
+        if query_lower in error_l:
+            score += 100
+        elif query_lower in tags_l:
+            score += 80
+        elif query_lower in tuxedo_l:
+            score += 60
+        elif query_lower in desc_l:
+            score += 40
+
+        for term in terms:
+            if term in error_l:
+                score += 15
+            if term in tags_l:
+                score += 12
+            if term in tuxedo_l:
+                score += 8
+            score += searchable.count(term)
+
+        results.append((score, entry))
+
+    results.sort(key=lambda x: x[0], reverse=True)
+    return [entry for _, entry in results]
+
+
+def format_new_entry(
+    error: str,
+    tuxedo_error: str,
+    description: str,
+    workaround: str,
+    tags: str,
+) -> str:
+    """Build a new entry block in the standard format."""
+    lines = [
+        "[ERROR]",
+        error.strip(),
+        "",
+        "[DESCRIPTION]",
+        description.strip() or "No additional description.",
+        "",
+        "[TUXEDO_ERROR]",
+        tuxedo_error.strip(),
+        "",
+        "[WORKAROUND]",
+        workaround.strip(),
+        "",
+        "[TAGS]",
+        tags.strip() or "general",
+        "",
+        "---",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def append_entry_to_file(data_dir: Path, filename: str, entry_text: str) -> Path:
+    """Append a new workaround entry to the specified file."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    target = data_dir / filename
+
+    if not target.exists():
+        header = (
+            "# CSM-WA Workarounds\n"
+            "# Format: [ERROR], [DESCRIPTION], [TUXEDO_ERROR], [WORKAROUND], [TAGS]\n"
+            "# Entry separator: ---\n\n"
+        )
+        target.write_text(header, encoding="utf-8")
+
+    with target.open("a", encoding="utf-8") as f:
+        f.write(entry_text)
+
+    return target

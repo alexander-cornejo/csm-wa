@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSM - WA | Work Around Search</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-content">
+        <div class="logo">
+          <a href="/" class="back-home" title="Back to home">← Home</a>
+          <span class="logo-icon">🔧</span>
+          <div>
+            <h1>CSM - WA</h1>
+            <p class="subtitle">Work Around Search Tool</p>
+          </div>
+        </div>
+        <nav class="tabs">
+          <button class="tab active" data-tab="search">Search</button>
+          <button class="tab" data-tab="add">Add</button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="main">
+      <section id="panel-search" class="panel active">
+        <div class="search-box">
+          <label for="search-input">Describe the error you are seeing</label>
+          <div class="search-row">
+            <input type="text" id="search-input" placeholder="e.g. ban in use, SC_ENV, ORA-00100" autocomplete="off">
+            <button id="btn-search" class="btn btn-primary">
+              <span class="btn-icon">🔍</span> Search
+            </button>
+          </div>
+          <p class="hint">Search by error keywords or Tuxedo error. Click a result to see full details.</p>
+        </div>
+
+        <div id="search-status" class="status hidden"></div>
+        <div id="search-results" class="results"></div>
+      </section>
+
+      <section id="panel-add" class="panel">
+        <div class="form-card">
+          <h2>Add new Work Around</h2>
+          <p class="form-desc">Record a new error and its solution in the documentation files.</p>
+
+          <form id="add-form">
+            <div class="form-group">
+              <label for="add-error">Error *</label>
+              <input type="text" id="add-error" required placeholder="Short title or error summary">
+            </div>
+
+            <div class="form-group">
+              <label for="add-description">Description</label>
+              <textarea id="add-description" rows="3" placeholder="Additional error context (optional)"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="add-tuxedo-error">Tuxedo Error</label>
+              <p class="field-hint">Paste the full error here (stack trace, Tuxedo messages, logs).</p>
+              <textarea id="add-tuxedo-error" rows="10" class="textarea-large" placeholder="Full error from the tool / logs..."></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="add-workaround">Work Around *</label>
+              <textarea id="add-workaround" rows="6" required placeholder="Steps to resolve the error..."></textarea>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="add-tags">Tags</label>
+                <input type="text" id="add-tags" placeholder="database, timeout, nginx">
+              </div>
+              <div class="form-group">
+                <label for="add-filename">Target file</label>
+                <select id="add-filename">
+                  <option value="workarounds.txt">workarounds.txt (new)</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-success">
+              <span class="btn-icon">➕</span> Save Work Around
+            </button>
+          </form>
+
+          <div id="add-status" class="status hidden"></div>
+        </div>
+
+        <div class="format-guide">
+          <h3>File format</h3>
+          <pre><code>[ERROR]
+Short title or error summary
+
+[DESCRIPTION]
+Additional context
+
+[TUXEDO_ERROR]
+Full error (stack trace, Tuxedo, logs)
+
+[WORKAROUND]
+Steps to resolve
+
+[TAGS]
+tag1, tag2
+
+---</code></pre>
+          <p>See example at: <code>data/workarounds/sample_workarounds.txt</code></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>CSM - WA v2.0</span>
+      <span>Documents in <code>data/workarounds/</code></span>
+    </footer>
+  </div>
+
+  <script src="/static/js/common.js?v=7"></script>
+  <script src="/static/js/wa.js?v=7"></script>
+</body>
+</html>

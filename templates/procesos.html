@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSM | Processes</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-content">
+        <div class="logo">
+          <a href="/" class="back-home" title="Back to home">← Home</a>
+          <span class="logo-icon">📋</span>
+          <div>
+            <h1>CSM - Processes</h1>
+            <p class="subtitle">Operational procedure search</p>
+          </div>
+        </div>
+        <nav class="tabs">
+          <button class="tab active" data-tab="search">Search</button>
+          <button class="tab" data-tab="add">Add</button>
+        </nav>
+      </div>
+    </header>
+
+    <main class="main">
+      <section id="panel-search" class="panel active">
+        <div class="search-box">
+          <label for="search-input">Search process</label>
+          <div class="search-row">
+            <input type="text" id="search-input" placeholder="e.g. activation, portability, cancellation" autocomplete="off">
+            <button id="btn-search" class="btn btn-primary">
+              <span class="btn-icon">🔍</span> Search
+            </button>
+          </div>
+          <p class="hint">Search by process name or words within the steps. Click a result to see details.</p>
+        </div>
+
+        <div id="search-status" class="status hidden"></div>
+        <div id="search-results" class="results"></div>
+      </section>
+
+      <section id="panel-add" class="panel">
+        <div class="form-card">
+          <h2>Add new Process</h2>
+          <p class="form-desc">Record an operational procedure and its steps.</p>
+
+          <form id="add-form">
+            <div class="form-group">
+              <label for="add-nombre">Process name *</label>
+              <input type="text" id="add-nombre" required placeholder="e.g. New line activation">
+            </div>
+
+            <div class="form-group">
+              <label for="add-pasos">Procedure steps *</label>
+              <textarea id="add-pasos" rows="10" class="textarea-large" required placeholder="1. Step one&#10;2. Step two&#10;3. Step three..."></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="add-filename">Target file</label>
+              <select id="add-filename">
+                <option value="procesos.txt">procesos.txt (new)</option>
+              </select>
+            </div>
+
+            <button type="submit" class="btn btn-success">
+              <span class="btn-icon">➕</span> Save Process
+            </button>
+          </form>
+
+          <div id="add-status" class="status hidden"></div>
+        </div>
+
+        <div class="format-guide">
+          <h3>File format</h3>
+          <pre><code>[NOMBRE]
+Process name
+
+[PASOS]
+Procedure steps
+
+---</code></pre>
+          <p>See example at: <code>data/procesos/csm_procesos.txt</code></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>CSM - Processes v2.0</span>
+      <span>Documents in <code>data/procesos/</code></span>
+    </footer>
+  </div>
+
+  <script src="/static/js/common.js?v=7"></script>
+  <script src="/static/js/procesos.js?v=7"></script>
+</body>
+</html>

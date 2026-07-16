@@ -1,0 +1,1046 @@
+# CSM Procesos - Documentación operativa
+# Formato: [NOMBRE], [PASOS]
+# Separador entre entradas: ---
+
+[NOMBRE]
+Add Subscriber to ctn_inv
+
+[PASOS]
+Rule:
+target market expected only when ctn_status=AM
+if ctn_status=AM -> in same market
+if ctn_status=AN in same market and added in nbi (make sure lat entry is on NBI market)
+if ctn_status=AI in same market and subscriber must be active check @ksub
+if ctn_status=ZA, port_ind has to be PI.
+
+Request: (WR#4647084)
+WAS 5404319688 add ctn_inv set ctn_status=AM, target_market=PHI
+NBI 7868819473 add ctn_inv set ctn_status=AI
+- (WR#4647562)
+WAS 4432540080 in ctn_inv_insert entry set ctn_status=AN and port_in=PI
+- (WR#4652821)
+WAS 3235336866 - Add target market = PAC
+
+Procedure:
+1. Login to requested market
+	wasm
+2. Check ctn record is not present
+	@ctn -> ctn
+3. Verify ctn record history
+	@ctn_h -> ctn
+4. Insert record to ctn_inv table (script)
+	@insctn -> ctn , status
+5. Verify record has desired details requested, if not matching, update them manually
+	select ctn, ctn_status, port_ind from ctn_inv where ctn='4432540080';
+	update ctn_inv set target_market = 'PHI' where ctn = '5404319688';
+	update ctn_inv set ctn_status = 'AI' where ctn = '5404319688';
+
+update CTN_INV set LAST_TRX_CODE = 'ZUP',CTN_STATUS = 'ZA',TARGET_MARKET=null,
+LAST_TRX_DATE=sysdate, APPLICATION_ID=user,
+PORT_IND = CASE
+WHEN (select count(*) from market_npa_nxx_lr where regexp_replace('&ctn','[^[:digit:]]')
+between NPA||NXX||BEGIN_LINE_RANGE and NPA||NXX||END_LINE_RANGE)>0 THEN 'RE'
+ELSE 'PI'
+END
+where CTN = regexp_replace('&ctn','[^[:digit:]]');
+5a. If no record matching in ctn_inv_history insert it manually using reference
+To get the NGP number string use:
+select V_COORDINATE||H_COORDINATE,NPA||NXX from rate_center_blocks where NPA='435' and NXX like '22%';
+select ctn, ngp from ctn_inv where ctn like '7203923%' fetch first 10 rows only;
+
+V_COORDINATE|NPA||N
+------------|------
+007941001034|407775
+007941001034|407775
+007941001034|407775
+007954001031|407776
+
+NPA - First 3 digits of CTN
+NXX - Next 3 digits of CTN
+Use the most approximate one
+
+INSERT INTO CTN_INV (CTN,SYS_CREATION_DATE,SYS_UPDATE_DATE,OPERATOR_ID,
+APPLICATION_ID,DL_SERVICE_CODE,DL_UPDATE_STAMP,LAST_TRX_DATE,LAST_TRX_CODE,
+CTN_STATUS,LAST_TRX_UID,NL,NGP,CONV_RUN_NO,SPECIAL_TRX_DATE,RUN_ID,HOLD_REASON,
+PRODUCT_TYPE,ICC_ID,PORT_IND,MIN_NUM,SPID,TARGET_MARKET,LOAN_PRD)
+VALUES ('7203923148','25-JUN-2026',null,699265,'','NM210',null,'25-JUN-2026',
+'ACT','AI',699265,'TPCNL','007482005737',0,null,null,'','G','','PI','','6214','','');
+6. Commit changes
+@c
+
+	EXAMPLE:
+	INSERT INTO CTN_INV (CTN,SYS_CREATION_DATE,SYS_UPDATE_DATE,OPERATOR_ID,
+	APPLICATION_ID,DL_SERVICE_CODE,DL_UPDATE_STAMP,LAST_TRX_DATE,LAST_TRX_CODE,
+	CTN_STATUS,LAST_TRX_UID,NL,NGP,CONV_RUN_NO,SPECIAL_TRX_DATE,RUN_ID,HOLD_REASON,
+	PRODUCT_TYPE,ICC_ID,PORT_IND,MIN_NUM,SPID,TARGET_MARKET,LOAN_PRD)
+	VALUES ('2107923013','13-AUG-2025',null,699265,'','NM210',null,'13-AUG-2025',
+	'ACT','AI',699265,'TPCNL','008410007179',0,null,null,'','G','','PI','','6214','MTZ','');
+
+	Please insert in ctn_inv set ctn status = AI port indicator = PI and target market = MTZ for the following CTN.
+
+---
+[NOMBRE]
+Remove entry from CTN_INV
+
+[PASOS]
+Request: (WR#4647112)
+Remove the entries from CTN INV, correct in home market.
+FLP 9187405830
+
+Procedure:
+1. Make sure you login to specified market
+	flpm
+2. Check ctn record is present
+	@ctn -> ctn
+3. Backup Record
+	create table ctn_inv_bkp_wr as select * from ctn_inv where ctn='9187405830';
+	insert into ctn_inv_bkp_wr select * from ctn_inv where ctn='9187405830';
+4. Save record copy to ctn_inv_history (script)
+	@insh -> ctn
+	4a. If error: ORA-00001: unique constraint (STLMASTEROWN.CTN_INV_HISTORY_PK) violated
+
+		This means that they is already another record matching the primary insert key built by
+		fields CTN, PRODUCT_TYPE, LAST_TRX_DATE. Check record in conflict and modify LAST_TRX_DATE
+
+			select ctn, last_trx_date, product_type from ctn_inv_history where ctn = '4242880630';
+			select * from ctn_inv_history where trunc(last_trx_date)='27-MAR-2025' and ctn='7165472510';
+			update ctn_inv_history set last_trx_date =last_trx_date-1  where trunc(last_trx_date)='&trx' and ctn='&ctn' AND trunc(sys_creation_date)='&crt';
+			delete from ctn_inv_history where ctn = '4242880630' and trunc(last_trx_date) = '20-mar-25' and product_type = 'G';
+
+			update ctn_inv_history set last_trx_date='13-MAY-2024' where ctn='9414576296' and last_trx_date='14-MAY-2024';
+5. Delete the record from ctn_inv
+	@dctn -> ctn
+6. Commit changes
+	@c
+
+Request:
+Please move the entry in ctn_inv with ctn_status = PO and port_ind = PO to ctn_inv_hist.
+These port outs are statused correctly in the home market.
+MKT CTN
+NBI 2545415632
+
+Procedure:
+1. Insert record into ctn_inv_history table
+	@insh
+1a. In case there entries with the same key, update them and try inserting again
+	update ctn_inv_history set last_trx_date = '02-APR-2025' where
+	trunc(last_trx_date)='&last_t' and trunc(sys_creation_date)='&sys_c' and ctn='&ctn';
+2. Delete the entry in ctn_inv table
+	@dctn
+
+---
+[NOMBRE]
+Expire central_routing_mdn
+
+[PASOS]
+Request:
+- MTZ 4805199492 expire central_routing_mdn
+
+Procedure:
+1. Check record
+	select * from XNCIAPPOWN.CENTRAL_ROUTING_MDN where subscriber_no='4805199492';
+	select * from CENTRAL_ROUTING_MDN where subscriber_no='4805199492';
+2. Backup Record
+	create table crm_bkp_wr as select * from XNCIAPPOWN.CENTRAL_ROUTING_MDN where subscriber_no='4805199492';
+	insert into crm_bkp_wr select * from XNCIAPPOWN.CENTRAL_ROUTING_MDN where subscriber_no='4805199492';
+	select * from crm_bkp_wr;
+3. manual update
+	update central_routing_mdn set expiration_date = sysdate-1 where subscriber_no='4805199492';
+3a. If the manual update does not work, perform the update in the cross market server
+	xmkm
+	select * from XNCIAPPOWN.CENTRAL_ROUTING_MDN where subscriber_no='4805199492';
+	update XNCIAPPOWN.CENTRAL_ROUTING_MDN set expiration_date = sysdate-1 where EXPIRATION_DATE is NULL and subscriber_no='&ctn';
+	update XNCIAPPOWN.CENTRAL_ROUTING_MDN set EXPIRATION_DATE=sysdate-1 WHERE SUBSCRIBER_NO=regexp_replace('&ctn','[^[:digit:]]') and EXPIRATION_DATE is NULL;
+4. Commit changes
+	@c
+
+---
+[NOMBRE]
+Add to central_routing_mdn
+
+[PASOS]
+Request:
+FLP 6562260890
+add to central_routing_mdn
+
+Rule:
+sister_market = current market
+nci_market = related_market from ctn_inv
+
+Procedure:
+1. Verify Record does not exist
+	select * from central_routing_mdn where subscriber_no='&ctn';
+2. Insert Record
+	insert into XNCIAPPOWN.central_routing_mdn
+	(subscriber_no,effective_date,sys_creation_date,sys_update_date,operator_id,application_id,
+	dl_service_code,dl_update_stamp,expiration_date,sister_market,nci_market,min_num,source_market)
+	values('4015160819','28-APR-2026','28-APR-2026',null,null,'WLNPWR','CS655',null,null,'BOS','SNE',null,null);
+
+	2a. If insufficient priviliges try in cross market
+		XNCIAPPOWN.central_routing_mdn
+3. Commit Changes
+	@c
+
+---
+[NOMBRE]
+Remove subscriber from nbi_mdn (NBI market only)
+
+[PASOS]
+Rule:
+As long as a subscriber is active in market nbi, there must be an entry in nbi_mdn table
+
+Request: (WR#4647410)
+7314206582 expire/remove nbi_mdn
+- (WR#4647562)
+SNE 2034198555 expire in nbi_mdn
+- (WR#4651310)
+Please expire from nbi_mdn.  CTN's are only active in direct market.
+MWR 6203443712
+NBI 6203443712
+Procedure:
+1. Check status in nbi_mdn table, subscriber should be present
+	@nbi -> subscriber
+2. Check in subscriber table, subscriber should not be active/present
+	@ksub -> subscriber
+3. Backup subscriber record
+	create table nbi_bkp as select * from nbi_mdn where subscriber_no='&ctn';
+	insert into nbi_bkp select * from nbi_mdn where subscriber_no='&ctn';
+4. Delete record
+	delete from nbi_mdn where subscriber_no='&ctn';
+5. Commit changes
+	@c
+
+---
+[NOMBRE]
+Add subscriber to nbi_mdn (NBI market only)
+
+[PASOS]
+Request: (WR#4647410)
+add nbi_mdn ( active in NBI subscriber )
+8012262063
+
+Procedure:
+1. Check status in nbi_mdn table, should not be present
+	@nbi -> subscriber
+2. Check if in subscriber table, should be present
+	@ksub
+3. Insert subscriber into nbi_mdn table
+	@inbi
+	-> subscriber (Query port request table for init_req_date)
+	-> subscriber (Query related market)
+	-> subscriber, init req date (use most recent), market
+	3a. In case there is no port request init req date, use current date DD-MMM-YYYY (28-May-2025)
+4. Verify record insertion
+	@nbi -> subscriber
+5. Commit changes
+	@c
+
+---
+[NOMBRE]
+Remove ctns from number pool
+
+[PASOS]
+Request: (WR#4647471)
+Please remove ctns from number pool for list attached
+
+Location:
+/csmt1scripts/sp4596/scripts/removePool
+Canek: /csmt1scripts/cs937w/scripts/removePool/
+
+Presetup:
+- Own ID in files
+load.ctl, sql_to_run.sql
+- Password saved in env variable
+echo $DBPASS (if null) -> DBPASS=$DBPASS_PROD -> export DBPASS
+
+Procedure:
+1. Create CSV file "ctn,ban" format without spaces
+	vi load.csv -> 4177774169,276039337126
+2. Run script
+	nohup ./createAndLoadAllDb.sh 2>&1 > step2_`date +\%Y\%m\%d_\%H.\%M`.log &
+3. Run script
+	nohup ./runallDB.sh 2>&1 > step3_`date +\%Y\%m\%d_\%H.\%M`.log &
+	tail -f `ls -rt step3* | tail -1`
+4. Verify all ctns are removed and advise if any where unable to be closed
+	cd log/ -> less step3_20250627_14.45.log /// less `ls -rt step3* | tail -1`
+
+Please specify in WR that below records could NOT be removed from pool:
+MKT CTN BAN STATUS
+
+Manual Activity:
+1. Check subscriber is cancelled with the ban
+	@ksub -> ctn
+2. There is an entry in ctn_inv
+	@ctn -> ctn
+3. Check Line range
+	@lr -> ctn
+4. Update ctn_inv entry
+	@poctn -> IO, 15-JUL-25, CTN
+	UPDATE CTN_INV SET LAST_TRX_CODE = 'PTO', PORT_IND = '&port_in',
+	last_trx_date='&date', CTN_STATUS = 'AG' WHERE CTN = '&ctn'
+5. Update subcriber table
+	@posub -> IO, ctn, ban
+	UPDATE SUBSCRIBER SET SUB_STATUS_RSN_CODE='WP',PORT_IND='&port_ind',
+	SUB_STATUS_LAST_ACT='CAN',NEXT_CTN=null,NEXT_CTN_CHG_DATE=null,PRV_CTN=null,
+	PRV_CTN_CHG_DATE=null WHERE SUBSCRIBER_NO='&sub' AND CUSTOMER_BAN='&ban'
+6. Commit changes
+	@c
+
+---
+[NOMBRE]
+Clear Ports
+
+[PASOS]
+Request: (WR#4647472)
+Please clear the ports for the attached lines.
+
+Presetup:
+- Own ID in files
+load.ctl, sql_to_run.sql
+- Password saved in env variable
+echo $DBPASS (if null) -> DBPASS=$DBPASS_PROD -> export DBPASS
+- update script file createAndLoadAllDb.sh for all lines to be like
+sqlplus ${DBUSER}/${DBPASS}@PALHC1 @create_table.sql
+
+Location:
+/csmt1scripts/sp4596/scripts/clearPorts
+
+Procedure:
+1. Save CTNs/MDN (only) in load.csv file and validate the number and length of each row (should be 10, no spaces or '-')
+	vi load.csv
+	wc -l load.csv
+	awk '{if(length($0) != 10) print NR,length($0)}' load.csv
+2. Run script to drop and create the table in all mkts (33) and to load load.csv
+	nohup ./createAndLoadAllDb.sh 2>&1 > step2_`date +\%Y\%m\%d_\%H.\%M`.log &
+		grep 'Table created.' `ls -rt step2* | tail -1` | wc -l -> Result should be 33
+		grep 'logical record count' `ls -rt step2*.log | tail -1` | wc -l -> Result should be 33
+3. Run script to clear ports on all MKTs and validate no account was in reserved status
+	nohup ./runallDB.sh 2>&1 > step3_`date +\%Y\%m\%d_\%H.\%M`.log &
+		(last egrep should not return anything, if so, please check CTN and BAN)
+		egrep '[0-9]{4} R' `ls -rt step3* | tail -1`
+
+5089189293            155016194105 R
+you have to manually check the reserved CTNs on respective BANs which ports were cleared...
+
+---
+[NOMBRE]
+Update VM_ID in subscriber table
+
+[PASOS]
+Request: (WR#4650737)
+***Please update VMID to MVA1 (MVMoA) ASAP***
+Subscribers are unable to use voicemail without this update.
+CTN        BAN          MKT
+7757902534 436106862474 NCA
+
+Procedure:
+1. Check Record is present
+	select * from subscriber where subscriber_no='&ctn' and customer_ban=&ban;
+2. Backup Full subscriber record
+	create table subscriber_bkp_wr as select * from subscriber where subscriber_no='&ctn' and customer_ban=&ban;
+	insert into subscriber_bkp_wr select * from subscriber where SUBSCRIBER_NO='&ctn' and CUSTOMER_BAN=&ban;
+	select count(*) from subscriber_bkp_wr;
+3. Run update VM_ID field script
+	@vmid -> ctn, ban, new vm_id
+4. Commit Changes
+	@c
+
+---
+[NOMBRE]
+Update epc_hss_id in subscriber table
+
+[PASOS]
+Request: (Chat)
+Due to systemic issues, the following subs have the wrong epc_hss_id in the subscriber table.
+Please update per below:
+CTN: 8454533132
+MKT:  NYR
+BAN: 319070304712
+Old epc_hss_id : HF4
+New epc_hss_id: HN5
+
+Procedure:
+1. Verify details
+	select * from subscriber where SUB_STATUS='A' and SUBSCRIBER_NO='&ctn';
+	1a. Make sure backup table is created to save record
+		create table subscriber_bkp_r as select * from subscriber where SUB_STATUS='A' and SUBSCRIBER_NO='&ctn';
+		insert into subscriber_bkp_r select * from subscriber where SUB_STATUS='A' and SUBSCRIBER_NO='&ctn';
+		select count(*) from subscriber_bkp_r;
+2. Run update script
+	@hss_u
+	-> ctn
+	-> new hss id
+3. Commit Changes
+	@c
+
+---
+[NOMBRE]
+Update field in subscriber
+
+[PASOS]
+Request:
+WTX
+3254569071 In Subscriber update port_ind=RE
+
+Procedure:
+1. Verify details
+	select * from subscriber where subscriber_no='3254569071';
+2. Update requested field
+	update subscriber set PORT_IND='&PORT_IND', APPLICATION_ID=user where subscriber_no='&ctn' and customer_ban='&ban';
+3. Commit Changes
+	@c
+
+---
+[NOMBRE]
+Update field in ctn_inv
+
+[PASOS]
+Request:
+NBI 3612357415
+in ctn_inv update ctn_status=ZG
+- (WR#4652821)
+GAC 4704710681 - Update SPID to 6214
+NBI 2036951823 - Update CTN status = AI
+
+Procedure:
+1. Check record
+	@ctn -> ctn
+2. Backup record
+	create table ctn_inv_bkp_wr as select * from ctn_inv where ctn = '&ctn';
+	insert into ctn_inv_bkp_wr select * from ctn_inv where ctn = '&ctn';
+	select count(*) from ctn_inv_bkp_wr;
+3. Run update sql
+	update CTN_INV set LAST_TRX_DATE=sysdate, APPLICATION_ID=user, LOAN_PRD = 'WBB' where CTN = '&ctn';
+	update CTN_INV set LAST_TRX_DATE=sysdate, APPLICATION_ID=user, LOAN_PRD = 'WBB', HOLD_REASON=null where CTN = '&ctn';
+	update CTN_INV set LAST_TRX_DATE=sysdate, APPLICATION_ID=user, SPID = '6214' where CTN = '&ctn';
+	update CTN_INV set LAST_TRX_DATE=sysdate, APPLICATION_ID=user, ctn_status='AM',target_market='NYR' where CTN = '&ctn';
+
+	update CTN_INV set LAST_TRX_DATE=sysdate, APPLICATION_ID=user, CTN_STATUS = 'ZG',LAST_TRX_CODE = 'ZUP',TARGET_MARKET=null,
+	PORT_IND = CASE
+		WHEN (select count(*) from market_npa_nxx_lr where regexp_replace('&ctn','[^[:digit:]]')
+		between NPA||NXX||BEGIN_LINE_RANGE and NPA||NXX||END_LINE_RANGE)>0 THEN 'RE' ELSE 'PI'
+	END
+	where CTN = regexp_replace('&ctn','[^[:digit:]]');
+
+	UPDATE CTN_INV SET LAST_TRX_CODE='ACT', CTN_STATUS = 'AI', LAST_TRX_DATE=sysdate,
+	application_id='CLARIF',DL_SERVICE_CODE=substr(user,1,5), PORT_IND = CASE
+	WHEN (select count(*) from market_npa_nxx_lr where regexp_replace('&ctn','[^[:digit:]]') between NPA||NXX||BEGIN_LINE_RANGE  and  NPA||NXX||END_LINE_RANGE)>0 THEN 'RE'
+	ELSE 'PI'
+	END
+	WHERE CTN in (regexp_replace('&ctn','[^[:digit:]]'));
+
+---
+[NOMBRE]
+Update record in rate_center_blocks table
+
+[PASOS]
+Request: (WR#4653259)
+Please update the SPID to 6214 for this entry in BOS rate_center_blocks table.
+NPA NXX  X  STS
+351 241  9  RC
+
+Procedure:
+1. Verify record
+	@rcb -> imput nca with nxx numbers together ex. 351241
+2. Backup Record
+	create table rcb_bkp_wr as select * from rate_center_blocks where npa||nxx='351241';
+	insert into rcb_bkp_wr select * from rate_center_blocks where npa||nxx='351241';
+	select * from rcb_bkp_wr;
+3. Update Record
+	update rate_center_blocks set SPID='6214' where npa||nxx='351241';
+4. Commit Changes
+	@c
+
+Request:
+Blocks were received with incorrect ngp.  Please update MWR rate_center_blocks:
+update rate_center_blocks set v_coordinate||r.h_coordinate=007489004520 where npa||nxx||x = 3162960
+
+Procedure:
+1. Verify Record
+	select * from rate_center_blocks where npa||nxx||x = '&npanxxx';
+2. Backup Record
+	create table rcb_bkp_wr as select * from rate_center_blocks where npa||nxx||x='&npanxxx';
+	insert into rcb_bkp_wr select * from rate_center_blocks where npa||nxx||x='&npanxxx';
+3. Update Record
+	update rate_center_blocks set v_coordinate='007489',h_coordinate='004520' where npa||nxx||x='&npanxxx';
+4. Commit Changes
+	@c
+
+---
+[NOMBRE]
+Port Out
+
+[PASOS]
+Rule:
+When clearing a port out request, manual status change should always be C (F is for system)
+
+Request: (WR#4655793)
+The reseller is getting a Port out error when trying to cancel the line in the billing system
+Clear the open Port in order to proceed with the cancellation
+SIM/CTN:89011702272099289156/2188414622
+
+Procedure:
+1. Check Port Request Status for CTN and identify the request blocking/stopping port out
+	@pr -> ctn
+2. Update Port request
+	@upr -> C (Cancel open port), Request_no
+3. Commit Changes
+	@c
+
+---
+[NOMBRE]
+Add to mdn_exceptions
+
+[PASOS]
+RULES:
+
+If the ctn is active with us and is a PI CTN it should have an effective entry in MDN_EXCEPTION table.
+If the RE CTN is ported out , there shuld be a PO effective entry in MDN_EXCEPTION table.
+If a PI CTN is ported out the entry should be expired at our end with the date on which it ported out.
+
+Request:
+Please add to mdn_exceptions as PI
+AUS 7372881555
+
+Procedure:
+1. Verify if active in subscriber table
+	@ksub
+2. Check if there is an entry in the table
+	select * from mdn_exceptions where mdn='&ctn';
+2. Insert if not existent, remove expiration date if active
+	a. Insert
+		@imdn -> subscriber, todays date (20-JUN-2025), SID from previous query
+	b. Backup and blank expiration date if ctn is already added and active in subscriber table
+		create table mdn_e_bkp_wr as select * from mdn_exceptions where mdn='&ctn';
+		insert into mdn_e_bkp_wr select * from mdn_exceptions where mdn='&ctn';
+		update mdn_exceptions set expiration_date = null where mdn='&ctn';
+3. Commit changes
+	@c
+
+---
+[NOMBRE]
+SIM Send Status
+
+[PASOS]
+Request: WR # 4658583
+Mkt: NBI
+BAN: 823318063
+CTN: 7543997176
+
+There is no SIM/IMSI being sent to SwControl.  Pls ck why.
+
+Procedure:
+1. Check in physical device table
+	@pdev
+	ITEM_ID        |     CUSTOMER_ID|SUBSCRIBER_NO       |UNIT_ESN            |      ESN_SEQ_NO|EFFECTIVE|EXPIRATIO|S|LAST_SW_A|N|IMSI           |E|EQ|       ESN_LEVEL|E|P
+	---------------|----------------|--------------------|--------------------|----------------|---------|---------|-|---------|-|---------------|-|--|----------------|-|-
+	PDA09324       |       823318063|7543997176          |356154281409719     |       373081998|10-JUL-23|07-APR-25|N|07-APR-25| |               | |5P|               2|I|G
+	UNKNOWN        |       823318063|7543997176          |89012804331003509862|       373081997|10-JUL-23|07-APR-25|N|07-APR-25| |310280100376236| |  |               1|S|G
+	PDA09324       |       823318063|7543997176          |356154281409719     |       432082434|14-APR-25|         |Y|07-APR-25| |               | |5P|               2|I|G
+				   |       823318063|7543997176          |89012804331003509862|       432082433|14-APR-25|         |N|07-APR-25| |310280100376236| |  |               1|S|G
+	Latest LAST_SW_ACTV_DATE in SIM is not sent.
+
+2. In Telegence
+	Search ctn -> 5. Profile -> Select Sim -> Change -> CR -> Paste SIM No. in 3rd field
+	and press Tab -> Ok -> Note WR#
+	2a. If error
+		In network interface -> Right click -> Open FML Debugger -> csmCallsm ->
+		replace value SIMM02 with blank to enable the change -> Retry change
+3. Recheck in Phisycal Device Table that is now sent.
+@pdev
+
+Reply:
+Hello. The SIM is now sent. Please verify. Thanks.
+
+---
+[NOMBRE]
+Remove duplicates from mdn_exceptions
+
+[PASOS]
+Request:
+Duplicate entries for below mentioned 2 MSISDN are present in TLG (XMKBAPPOWN.MDN_EXCEPTIONS) database.
+Could you please check and delete Expired entries from database (Duplicate entries attached).
+MSISDN
+6463005325
+
+Procedure:
+1. Check mdn_exceptions table in target market
+select * from mdn_exceptions where mdn='&ctn';
+
+MDN                 |EFFECTIVE|SYS_CREAT|SYS_UPDAT|     OPERATOR_ID|APPLIC|DL_SE| DL_UPDATE_STAMP|PO|EXPIRATIO|SID  |BL_S|       UPDATE_ID
+--------------------|---------|---------|---------|----------------|------|-----|----------------|--|---------|-----|----|----------------
+6463005325          |28-MAR-25|13-APR-25|         |                |CSMDEX|NM801|                |PI|         |40641|TLG |      1162293455
+6463005325          |31-MAR-25|07-APR-25|13-APR-25|         4627272|CSMWR |NM824|                |PI|28-MAR-25|40641|TLG |      1162293454
+
+2. Identify duplicate record and remove it.
+delete from mdn_exceptions where mdn='&ctn' and port_status='PI' and trunc(expiration_date) = '16-SEP-25';
+3. Commit Changes
+
+---
+[NOMBRE]
+Delete parked equipment
+
+[PASOS]
+Request:
+Please delete parked equipment from the below.
+ban:303719511
+ctn:8179441609
+ctn:8179441608
+
+Procedure:
+1. Execute script to remove desired parked equipement
+@parked
+1a. If the above script fails, execute second script
+@parked2
+2. Commit Changes
+@c
+
+---
+[NOMBRE]
+Update customer dealer_code in customer table
+
+[PASOS]
+Request:
+CSM-Please update the dealer code on the backend below BANs from 206KN to PJX30.
+We are unable to access the accounts due to security limitations. Thanks
+GAC - 534361378020
+DLS - 177133542998
+NCA   436212562097
+
+Procedure:
+1. Check value
+select * from customer where customer_id=&ban;
+2. Backup record
+create table customer_bkp_wr as select * from customer where customer_id=&ban;
+insert into customer_bkp_wr select * from customer where customer_id=&ban;
+2. Update value
+update customer set dealer_code='PJX30', agent_code='PJX30', agent_location='PJX30' where customer_id=&ban;
+3. Commit changes
+@c
+
+---
+[NOMBRE]
+IMEI definition
+
+[PASOS]
+Request: WR # 4664304
+Hi Team,
+Can you please check the below rate plan change failed due to below incompatible
+imei error, but IMEI is actually U9 and not U0 AND both these IMEI should be
+compatible with the plan, please check if this is valid or not
+Account : 188242256061 GLR
+Mobile : 8153432465
+
+Hello team in the physical_device table 014390001840270 is mentioned ad U0
+but in the imei_frequency range we have it as U9. Thank you.
+
+Procedure:
+1. Check Physical Device
+@pdev -> ban,ctn
+
+ITEM_ID        |     CUSTOMER_ID|SUBSCRIBER_NO       |UNIT_ESN            |      ESN_SEQ_NO|EFFECTIVE|EXPIRATIO|S|LAST_SW_A|N|IMSI           |E|EQ|       ESN_LEVEL|E|P
+---------------|----------------|--------------------|--------------------|----------------|---------|---------|-|---------|-|---------------|-|--|----------------|-|-
+PDA03708       |    188242256061|8153432465          |014390001840270     |       213457508|11-FEB-23|         |Y|11-FEB-23| |               | |U0|               2|I|G
+               |    188242256061|8153432465          |89014103278652190425|       213457507|11-FEB-23|         |Y|11-FEB-23| |310410865219042| |  |               1|S|G
+
+2. Check item definition table
+@imei_def
+
+ITEM_ID        |ITEM_SDESC  |ITEM_LDESC                    |I
+---------------|------------|------------------------------|-
+PDA03708       |E4710       |KYOCERA E4710                 |E
+
+3. Check imei_type from imei_frequency table
+select * from IMEI_FREQUENCY where '014390001840270' between from_imei and to_imei;
+
+FROM_IMEI           |TO_IMEI             |FREQU|SYS_CREAT|SYS_UPDAT|     OPERATOR_ID|APPLIC|DL_SE| DL_UPDATE_STAMP|IM|ITEM_ID        |S|U|D|D|NSET_DVCE_CAPABLE|I|L|NFC_CAP   |I|I|C|V|R|D|DEVICE_CAPABILITY                                |F|NETWORK_TY
+--------------------|--------------------|-----|---------|---------|----------------|------|-----|----------------|--|---------------|-|-|-|-|-----------------|-|-|----------|-|-|-|-|-|-|-------------------
+014390000000000     |014390009999999     |1900 |14-SEP-22|14-SEP-22|           11111|RLEASE|DST  |            1111|U9|PDA03708       |1|U|N| |                2| |7|N         |7| |Y|Y|N|N|                                                 |N|LTE
+014390000000000     |014390009999999     |2100 |14-SEP-22|14-SEP-22|           11111|RLEASE|DST  |            1111|U9|PDA03708       |1|U|N| |                2| |7|N         |7| |Y|Y|N|N|                                                 |N|LTE
+014390000000000     |014390009999999     |700  |14-SEP-22|14-SEP-22|           11111|RLEASE|DST  |            1111|U9|PDA03708       |1|U|N| |                2| |7|N         |7| |Y|Y|N|N|                                                 |N|LTE
+014390000000000     |014390009999999     |850  |14-SEP-22|14-SEP-22|           11111|RLEASE|DST  |            1111|U9|PDA03708       |1|U|N| |                2| |7|N         |7| |Y|Y|N|N|                                                 |N|LTE
+
+4. Confirm incorrect type and proceed with backup and update
+create table pd_bkp_wr as select * from physical_device where equ_type='I' and CUSTOMER_ID='188242256061' and subscriber_no='8153432465';
+insert into pd_bkp_wr select * from physical_device where equ_type='I' and CUSTOMER_ID='188242256061' and subscriber_no='8153432465';
+update physical_device set equ_attr='U9' where equ_type='I' and CUSTOMER_ID='188242256061' and subscriber_no='8153432465';
+
+5. Commit Changes
+@c
+
+---
+[NOMBRE]
+BSALES_Manual_Credit_Expire
+
+[PASOS]
+Request:
+Hi team,
+Need your assistance to expire manually this credit application below for BAN as per AR Team.
+
+AOTS#335095282
+Credit Bureau Pending
+Credit Ref#: 505297380028
+Credit Class:
+BAN: 287327372879 - NBI
+Fan: 62131092 - CLB
+
+Procedure:
+1. Check Credit history table
+script @ch or
+select * from credit_history where ban=&ban and cas_order_number=&case;
+2. Take backup
+create table credit_history_bkp_wr as select * from credit_history where ban=&ban and cas_order_number=&case;
+insert into credit_history_bkp_wr select * from credit_history where ban=&ban and cas_order_number=&case;
+3. Expire the entry
+update credit_history set manual_exp_date = sysdate-1, application_id = 'CSMT1' where ban=&ban and cas_order_number=&case;
+select ban,application_id,manual_exp_date,cas_order_number from credit_history where ban=&ban and cas_order_number=&case;
+4. Commit Changes
+@c
+
+---
+[NOMBRE]
+Update MDN_EXCEPTIONS
+
+[PASOS]
+Rule:
+New entries should be inserted with port_status='PI' and expiation_date = null;
+
+Request:
+Hello WLNP Team.
+We have errors in mediation Voice/VoLTE/QP and PGW due to no valid exception/range
+entry for these MSISDN`s, which we show are ACTIVE subscribers.
+Can you please check and add the necessary entries for given MSISDNs, so these
+reflect an active status.
+
+MSISDN     TRACK
+7478955666 PGW
+9292287005 QP
+7327329044 Volte
+
+Procedure:
+1. Check subscriber and ctn inventory tables
+@ksub
+@ctn
+2. Choose the script depending the situation
+- mdn.sql
+select * from MDN_EXCEPTIONS where MDN='&ctn';
+
+- emdn.sql
+update MDN_EXCEPTIONS set EXPIRATIOn_date=sysdate-1 where MDN='&mdn';
+undefine mdn
+
+- amdn.sql
+update MDN_EXCEPTIONS set EXPIRATION_date=null where MDN='&mdn';
+undefine mdn
+
+- mdni.sql
+accept ctn prompt "Please enter CTN/Subscriber_No: "
+insert into mdn_exceptions values(regexp_replace('&ctn','[^[:digit:]]'),
+sysdate,sysdate,null,null,null,'WLNP',null,'&porth_path',null,
+(select max(SID) from npa_nxx_vh b where npa||nxx=substr(regexp_replace('&ctn','[^[:digit:]]'),1,6)),'TLG',null);
+undefine ctn
+
+- umdn.sqlupo
+update mdn_exceptions set port_status='&port_ind' where mdn='&ctn';
+undefine ctn
+
+2a. To delete entries
+create table mdn_e_bkp_wr as select * from MDN_EXCEPTIONS where MDN='&ctn';
+insert into mdn_e_bkp_wr select * from MDN_EXCEPTIONS where MDN='&ctn';
+update mdn_exceptions set port_status='PI', EXPIRATIOn_date=null where mdn='&ctn';
+- Delete expired records
+insert into mdn_e_bkp_wr select * from MDN_EXCEPTIONS where MDN='&ctn' and expiration_date is not null;
+delete from mdn_exceptions where MDN='&ctn' and expiration_date is not null;
+
+Request:
+Hello WLNP team.
+Port status for 2 MSISDNs is RE in PMKBX1 database which need to be updated to PI
+in order to make them active in FW database. Please do the needful.
+
+Explanation:
+The Cross Market Table updates cascade into the crresponding market table for the ctn.
+5822786050
+7327329044
+
+Procedure:
+1. Update mdn_exceptions table as per request.
+update XMKBAPPOWN.MDN_EXCEPTIONS set port_status='PI' where mdn='&ctn';
+2. Commit Changes
+
+---
+[NOMBRE]
+Get SIM Number
+
+[PASOS]
+Request: WR#4661148
+opening a new wr for sim corrections.
+ban:436183782237
+ctn:4422855822
+
+Procedure:
+1. Check in PEARS or @mkt script to get market of CTNs
+2. Get the active SIM (Null expiration_date), if not, most recently cancelled.
+select customer_id, subscriber_no, equ_type, expiration_date, unit_esn from physical_device
+where equ_type='S' and customer_id=&ban and subscriber_no='&ctn' order by expiration_date desc;
+
+Reply:
+Hello NSM Team.
+Please update sim status to U.
+Once done please revert it OPUS IT Production Support Team. Thanks.
+BAN: 876049002    CTN: 6622162610 SIM: 89014104333794084363
+
+---
+[NOMBRE]
+EIP limit
+
+[PASOS]
+Request: WR # 4677954
+Please expire the EIP limit for agreement 88776486.
+They have reclassified and changed the Account sub type to Regular from Major.
+
+Procedure:
+1. Check Contract record (usually in NBI)
+select * from agr_inst_attr where contract_id=&contract_id;
+1a. In case contract is not found, we can verify the correct number
+select fan_id, contract_id from fan_info where fan_id='59443212790' and fan_expiration_dt is null;
+2. Backup Record
+create table agr_inst_attr_bkp_clf as select * from agr_inst_attr where contract_id=&contract_id;
+create table agr_inst_attr_bkp_wr as select * from agr_inst_attr where contract_id=&contract_id;
+insert into agr_inst_attr_bkp_wr select * from agr_inst_attr where contract_id=&contract_id;
+3. Expire contract
+update agr_inst_attr set expiration_date=trunc(sysdate-1) where contract_id=&contract_id and expiration_date is null; -- expiration date as previous day
+4. Commit Changes
+@c
+
+---
+[NOMBRE]
+AGENT Error
+
+[PASOS]
+The combination (2U391 NWS) does not appear in the columns (location_id agent)
+of the table 'agent_location'
+
+Request:
+Trying to access the Agreement tab for 5038876713 and receive the below
+we cannot resolve as the line is Canceled:
+---------------------------
+DATABASE ERROR (#707)
+---------------------------
+The combination (2U391 NWS) does not appear in the columns (location_id agent)
+of the table 'agent_location'.
+---------------------------
+OK
+---------------------------
+
+Procedure:
+1. Check Service_agreement Table for any agent codes matching the error
+select soc,dealer_code,agent_code,init_dealer,init_rmv_dealer,agent_location
+from service_agreement where ban=825806444 and subscriber_no='5038876713'
+2. Check subscriber table
+select customer_ban,subscriber_no,dealer_code,init_com_dlr,lst_com_actv_dlr,
+ixc_chg_dlr_cd,agent_code,agent_location,ixc_chg_agt_cd,ixc_chg_agt_loc
+from subscriber where customer_ban=825806444 and subscriber_no='5038876713';
+
+CUSTOMER_BAN|SUBSCRIBER_NO       |DEALER_|INIT_CO|LST_COM|IXC_CHG|AGENT_C|AGENT_L|IXC_CHG|IXC_CHG
+------------|--------------------|-------|-------|-------|-------|-------|-------|-------|-------
+   825806444|5038876713          |108DZ  |108DZ  |108DZ  |108DZ  |NWS    |2U391  |NWS    |2U391
+
+3. Backup Record
+insert into subscriber_bkp_clf select * from subscriber where customer_ban=&ban and subscriber_no='&ctn';
+4. Update old agent codes with parent valid code, if it does not work then use WLNP1
+update subscriber set agent_code='108DZ',agent_location='108DZ',
+ixc_chg_agt_cd='108DZ',ixc_chg_agt_loc='108DZ'
+where customer_ban=&ban and subscriber_no='&ctn';
+5. Commit Changes
+
+---
+[NOMBRE]
+How to check if someone is sending a lot of ports
+
+[PASOS]
+SQL> !cat ports_count.sql
+accept pt prompt "Ports threshold(50): " default 50
+
+select a.sys_creation_date, a.ban, last_business_name, PORT_PATH, other_net_sp spid, carrier_name, count
+from (select trunc(a.sys_creation_date) sys_creation_date, ban, PORT_PATH, other_net_sp, carrier_name, count(*) count
+        from port_request a, carrier
+        where trunc(a.sys_creation_date)>=sysdate-1
+        and carrier_code=other_net_sp
+        group by trunc(a.sys_creation_date), ban, PORT_PATH, other_net_sp, carrier_name
+        having count(*)>&pt) a, address_name_link b, name_data c
+where b.name_id=c.name_id
+and a.ban=b.ban
+and link_type='B'
+and expiration_date is null
+order by 4,7 desc;
+
+---
+[NOMBRE]
+How to check WLNP daemon Logs
+
+[PASOS]
+WLNP batch box: tlpvlnp2.dadc.sbc.com
+cd /tuxappl/tuxwlnp/config/logs
+TLG_DAEMON_<MKT>* logs.
+
+Para porting issues, revisar que no haya backlog en las WLNP queues.
+
+-- Anusha's query to get PI's in error for a particular day
+select sp.ban,sp.subscriber_no,p.*,sp.act_seq_no,sp.ctn_status,sp.req_sub_status
+from port_request p,sub_port_request sp where
+trunc(p.sys_creation_date) = '12-APR-2026'
+and p.port_path='PI'
+and p.request_sts='E'
+and p.request_no=sp.request_no;
+
+---
+
+[NOMBRE]
+How to check all constraint
+
+[PASOS]
+select COLUMN_NAME from all_cons_columns where owner='GLRMASTEROWN' and CONSTRAINT_NAME='SERVICE_FEATURE_1FK';
+
+COLUMN_NAME
+--------------------------
+BAN
+SUBSCRIBER_NO
+SOC
+SOC_SEQ_NO
+FTR_SOC_VER_NO
+PRODUCT_TYPE
+
+---
+
+[NOMBRE]
+Duplicate SIM/IMEI in 5. Profile in Telegence
+
+[PASOS]
+Request:
+BAN: 534246866695
+CTN: 7062489880
+IMEI: 355008280306022
+
+Procedure:
+1. Check imei on physical_device table
+@pdev -> ban, ctn
+2. Backup duplicate imei record
+create table pd_bkp_wr as select * from physical_device where customer_id='&ban'
+and subscriber_no='&ctn' and esn_seq_no='&esn';
+insert into pd_bkp_wr select * from physical_device where customer_id='&ban'
+and subscriber_no='&ctn' and esn_seq_no='&esn';
+3. Expire duplicate record, the one with the lowest ESN_SEQ_NO
+update physical_device set expiration_date=trunc(sysdate-1), sw_state_ind='N'
+where customer_id='&ban' and subscriber_no='&ctn' and esn_seq_no='&esn';
+4. Commit Changes
+@c
+
+---
+
+[NOMBRE]
+Update ZIG ACTIVE to ctn_inv
+
+[PASOS]
+Request: WR # 4678265
+Please mark CTN(s) 8593584509, 8593585097, 8593584768, 8593532762 as ZIG ACTIVE
+and correct the routing so the port out can be processed. The port request is
+generating the wrong SPID hence 6D - MDN not found/does not belong to this SP.
+We show that the number is still active with Cricket but the SPID isn't reflecting
+X508 please correct the port routing. Thanks!
+
+Procedure:
+1. Check ctn_inv record in ctn's market
+select ctn, last_trx_code, ctn_status, port_ind, spid from ctn_inv where ctn in(&ctns);
+2. Check that record has ctn_status = ZA in target market
+update ctn_inv set last_trx_code='ZUP', ctn_status='ZA' where ctn='&ctn';
+3. Check nbi_mdn table to make sure the ctn is not being routed to nbi
+@nbi
+3a. If there is an entry, delete it.
+
+---
+
+[NOMBRE]
+Subscribers with same MNET_SUBID
+
+[PASOS]
+PROBLEM_DESCRIPTION:
+3129258847, sub_id currently in use by 6109086265. most likely
+a number change was done in the past, then the old CTN was Resume'd incorrectly.
+you will need to do a ticket to TLG CSM to get a new mnet_subid for 3129258847
+N_NBI_CHI_1697471583000164000407
+
+1. Check duplicate MNET_SUBID
+select customer_ban, subscriber_no, mnet_subid, SUB_STATUS from subscriber where mnet_subid='&MNET_SUBID';
+2. Backup subscriber entry to update
+create table subscriber_bkp_clf as select * from subscriber where subscriber_no='&ctn' and customer_ban=&ban;
+insert into subscriber_bkp_clf select * from subscriber where SUBSCRIBER_NO='&ctn' and CUSTOMER_BAN=&ban;
+3. Update subscriber entry
+Select SUBSTR(mnet_subid,0,length(mnet_subid)-13)||
+(SELECT (SYSDATE-CAST(TO_TIMESTAMP_TZ('01-01-1970 00:00:00+00:00','DD-MM-YYYY HH24:MI:SS TZH:TZM') as date)) * 24 * 60 * 60 * 1000 FROM DUAL)
+from subscriber where mnet_subid='&MNET_SUBID' and rownum<2;
+update subscriber set mnet_subid='N_NBI_CHI_1697471581755523224000' where subscriber_no='&ctn' and customer_ban=&ban;
+
+Script: @mnet2
+prompt "This script will look for dupped MNET_SUBID provided, will create a new one and will update specified CTN"
+accept MNET_SUBID prompt "Please enter MNET_SUBID: "
+Select customer_ban, subscriber_no, mnet_subid, SUB_STATUS from subscriber where mnet_subid='&MNET_SUBID';
+prompt "Please specify the CTN and BAN were MNET_SUBID will be updated"
+update subscriber set mnet_subid=(Select SUBSTR(mnet_subid,0,length(mnet_subid)-13)||(SELECT (SYSDATE-CAST(TO_TIMESTAMP_TZ('01-01-1970 00:00:00+00:00','DD-MM-YYYY HH24:MI:SS TZH:TZM') as date)) * 24 * 60 * 60 * 1000 FROM DUAL) from subscriber where mnet_subid='&MNET_SUBID' and rownum<2) where subscriber_no='&ctn' and customer_id=&ban;
+Select customer_ban, subscriber_no, mnet_subid, SUB_STATUS from subscriber where mnet_subid='&MNET_SUBID';
+Select customer_ban, subscriber_no, mnet_subid, SUB_STATUS from subscriber where mnet_subid=(Select SUBSTR(mnet_subid,0,length(mnet_subid)-13)||(SELECT (SYSDATE-CAST(TO_TIMESTAMP_TZ('01-01-1970 00:00:00+00:00','DD-MM-YYYY HH24:MI:SS TZH:TZM') as date)) * 24 * 60 * 60 * 1000 FROM DUAL) from subscriber where mnet_subid='&MNET_SUBID' and rownum<2);
+undefine MNET_SUBID
+
+---
+
+[NOMBRE]
+RSA Request
+
+[PASOS]
+Request: WR#4697805
+Please trigger RSA for the CTN below and advise.  Thanks.
+     CTN        MKT    BAN
+2025772962 NBI 287295777765
+
+Procedure:
+1. In Telegence
+Open Subscriber -> 3. Agreement -> Page Options -> Resend Activation to Switch...
+- If sucessful, the system will give a successful notice.
+2. In case of failure, check that the CTN has active SIM and IMEI. If they are
+expired, enable them by removing the expiration date to the most recent ones.
+@pdev -> Ban, ctn
+3. Backup Records
+create table pd_bkp_wr as select * from physical_device
+where CUSTOMER_ID='287295777765' and subscriber_no='2025772962';
+insert into pd_bkp_wr select * from physical_device
+where CUSTOMER_ID='287295777765' and subscriber_no='2025772962';
+4. Blank expiration date to make the SIM/IMEI active again
+update physical_device set expiration_date=null where
+CUSTOMER_ID='287295777765' and subscriber_no='2025772962';
+5. Commit changes
+@c
+
+---
+
+[NOMBRE]
+Expire application
+
+[PASOS]
+Request: WR#4698087
+Please manually expire application 510067427692 on NBI BAN 832103029.
+
+Procedure:
+1. Check in credit_history table and see record with no expiration_date
+select crd_seq_no,application_id,credit_date,credit_status,cas_requested_ctn_qty as REQ_QTY,
+to_char(CAS_ORDER_NUMBER,'9999999999999'),cas_approved_ctn_qty as APP_QTY,cas_expire_date,
+cas_total_approve_ctn as T_APP_QTY,cas_order_used_qty as USD_QTY,manual_exp_date,ban_affect_ind,
+sugg_deposit from credit_history where ban=832103029 and cas_order_number=510067427692;
+2. Backup record
+create table ch_bkp_wr as select * from credit_history where crd_seq_no=752224897
+and ban=832103029 and cas_order_number=510067427692;
+3. Expire record
+update credit_history set manual_exp_date=sysdate-1 where crd_seq_no=752224897
+and ban=832103029 and cas_order_number=510067427692;
+4. Commit Changes
+@c
+
+---

@@ -1,0 +1,108 @@
+# CSM-WA Workarounds - Archivo de ejemplo
+# Formato: [ERROR], [DESCRIPTION], [TUXEDO_ERROR], [WORKAROUND], [TAGS]
+# Separador entre entradas: ---
+#
+# Puedes crear más archivos .txt en esta carpeta (data/workarounds/)
+# y la herramienta los indexará automáticamente.
+
+[ERROR]
+Connection refused: Unable to connect to database on port 5432
+
+[DESCRIPTION]
+El servicio de base de datos no responde o el puerto está bloqueado por firewall.
+Aparece al iniciar la aplicación o ejecutar migraciones.
+
+[TUXEDO_ERROR]
+ORA-12541: TNS:no listener
+Connection refused: Unable to connect to database on port 5432
+  at Database.connect (db_client.py:142)
+  Host: prod-db.internal:5432
+  Status: connection refused
+
+[WORKAROUND]
+1. Verificar que PostgreSQL esté corriendo: `systemctl status postgresql`
+2. Revisar que el puerto 5432 esté abierto en el firewall
+3. Validar la cadena de conexión en config/database.yml
+4. Reiniciar el servicio: `systemctl restart postgresql`
+5. Si persiste, revisar logs en /var/log/postgresql/
+
+[TAGS]
+database, connection, postgresql, port-5432
+
+---
+
+[ERROR]
+HTTP 502 Bad Gateway - nginx upstream
+
+[DESCRIPTION]
+Nginx no puede comunicarse con el backend. Suele ocurrir después de un deploy
+o cuando el servicio backend está caído.
+
+[WORKAROUND]
+1. Verificar que el backend esté activo: `systemctl status myapp-backend`
+2. Revisar logs de nginx: `tail -f /var/log/nginx/error.log`
+3. Confirmar que el upstream apunta al puerto correcto en nginx.conf
+4. Reiniciar backend y nginx en ese orden
+5. Validar conectividad local: `curl http://127.0.0.1:8080/health`
+
+[TAGS]
+nginx, 502, gateway, backend, deploy
+
+---
+
+[ERROR]
+OutOfMemoryError: Java heap space
+
+[DESCRIPTION]
+La JVM se queda sin memoria heap durante procesamiento de archivos grandes
+o picos de carga.
+
+[WORKAROUND]
+1. Aumentar heap en JAVA_OPTS: `-Xmx4g -Xms2g`
+2. Revisar memory leaks con heap dump: `jmap -dump:live,format=b,file=heap.bin <pid>`
+3. Optimizar queries que cargan demasiados registros en memoria
+4. Habilitar GC logging para diagnóstico
+5. Considerar procesamiento por lotes (batch) en lugar de cargar todo
+
+[TAGS]
+java, memory, heap, oom, jvm
+
+---
+
+[ERROR]
+SSL certificate verify failed: certificate has expired
+
+[DESCRIPTION]
+El certificado TLS del servidor o de un servicio externo ha expirado.
+Común en integraciones con APIs de terceros.
+
+[WORKAROUND]
+1. Verificar fecha de expiración: `openssl s_client -connect host:443 | openssl x509 -noout -dates`
+2. Renovar certificado con el proveedor (Let's Encrypt, CA interna, etc.)
+3. Actualizar certificado en el load balancer / nginx / IIS
+4. Reiniciar el servicio que usa el certificado
+5. Para entornos de desarrollo, importar el nuevo certificado al truststore
+
+[TAGS]
+ssl, tls, certificate, expired, security
+
+---
+
+[ERROR]
+Timeout waiting for Kubernetes pod to become ready
+
+[DESCRIPTION]
+Un pod no pasa el readiness probe dentro del tiempo límite.
+Frecuente en deploys con dependencias lentas (DB, cache).
+
+[WORKAROUND]
+1. Revisar estado del pod: `kubectl describe pod <pod-name> -n <namespace>`
+2. Ver logs: `kubectl logs <pod-name> -n <namespace> --previous`
+3. Aumentar initialDelaySeconds en readinessProbe si la app tarda en arrancar
+4. Verificar que las variables de entorno y secrets estén montados
+5. Revisar eventos: `kubectl get events -n <namespace> --sort-by='.lastTimestamp'`
+
+[TAGS]
+kubernetes, k8s, pod, timeout, readiness, deploy
+
+---
